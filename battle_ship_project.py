@@ -20,6 +20,7 @@ class Game:
         player2 (int): telegram ID второго игрока.
         board1 (list[list[int]]): Поле 10x10 первого игрока.
         board2 (list[list[int]]): Поле 10x10 второго игрока.
+        timeout_timer (threading.Timer): Таймер бездействия.
         current_turn (int): ID игрока, чей сейчас ход.
     """
     def __init__(self, player1, player2):
@@ -34,6 +35,30 @@ class Game:
         self.board1 = self.generate_board()
         self.board2 = self.generate_board()
         self.current_turn = random.choice([player1, player2])
+        self.timeout_timer = None
+        self.reset_timeout_timer()
+    
+    def reset_timeout_timer(self):
+        """Сбрасывает и запускает новый таймер бездействия (3 минуты).
+        Если игрок не сделает ход за это время — он проигрывает.
+        """
+        if self.timeout_timer:
+            self.timeout_timer.cancel()
+        self.timeout_timer = threading.Timer(180, self.timeout_loss)
+        self.timeout_timer.start()
+
+    def timeout_loss(self):
+        """Обрабатывает автопоражение текущего игрока из-за бездействия.
+        Уведомляет обоих игроков и завершает игру.
+        """
+        loser = self.current_turn
+        winner = self.player1 if loser == self.player2 else self.player2
+        context = self.context  # Сохраняем контекст в момент старта игры
+
+        context.bot.send_message(loser, "Вы не сделали ход в течение 3 минут. Вы проиграли, чем вы там заняты?!")
+        context.bot.send_message(winner, "🎉 Ваш соперник не сделал ход вовремя. Вы победили!")
+
+        games.pop(frozenset({self.player1, self.player2}), None)
 
     def generate_board(self):
         """Рандомно генерирует игровое поле 10x10 с размещёнными кораблями по правилам игры.
@@ -217,7 +242,7 @@ waiting = []
 games = {}
 
 
-def start(update: Update):
+def start(update: Update, context: CallbackContext):
     """Обрабатывает введение игроком команды /start.
 
     Отправляет пользователю приветственное сообщение с информацией.
@@ -242,14 +267,15 @@ def play(update: Update, context: CallbackContext):
             player1 = waiting.pop(0)
             player2 = waiting.pop(0)
             game = Game(player1, player2)
+            game.context = context
             games[frozenset({player1, player2})] = game
             context.bot.send_message(
                 player1,
-                f"Игра началась! Первый ход за {'вами' if game.current_turn == player1 else 'соперником'}.",
+                f"Игра началась! Используйте команду /stop, чтобы досрочно завершить игру. Первый ход за {'вами' if game.current_turn == player1 else 'соперником'}.",
             )
             context.bot.send_message(
                 player2,
-                f"Игра началась! Первый ход за {'вами' if game.current_turn == player2 else 'соперником'}.",
+                f"Игра началась! Используйте команду /stop, чтобы досрочно завершить игру. Первый ход за {'вами' if game.current_turn == player2 else 'соперником'}.",
             )
             send_boards(context, game)
         else:
@@ -258,14 +284,25 @@ def play(update: Update, context: CallbackContext):
         update.message.reply_text('Сейчас идёт другая игра.')
 
 
-def stop(update: Update):
+def stop(update: Update, context: CallbackContext):
     """Обрабатывает введенную команду /stop.
 
     Заканчивает текущую партию и очищает все активные сессии.
     """
-    global games
-    games = {}
-    update.message.reply_text('Вы остановили игру.')
+    user_id = update.message.from_user.id
+
+    for key in list(games.keys()):
+        if user_id in key:
+            game = games.pop(key)
+            if game.timeout_timer:
+                game.timeout_timer.cancel()
+            opponent_id = game.player1 if user_id == game.player2 else game.player2
+
+            update.message.reply_text("Вы остановили игру.")
+            context.bot.send_message(opponent_id, "Противник завершил игру досрочно командой /stop.")
+            return
+
+    update.message.reply_text("Вы не участвуете в текущей игре.")
 
 
 def send_boards(context, game):
@@ -367,6 +404,7 @@ def handle_message(update: Update, context: CallbackContext):
         return
 
     result = game.shot(user_id, coord)
+    game.reset_timeout_timer()
     protivnik = game.player1 if user_id == game.player2 else game.player2
 
     if result == 'hit':
@@ -384,6 +422,8 @@ def handle_message(update: Update, context: CallbackContext):
     elif result == 'win':
         context.bot.send_message(user_id, "🎉 Вы победили!")
         context.bot.send_message(protivnik, "😢 Вы проиграли...")
+        if game.timeout_timer:
+                    game.timeout_timer.cancel()
         del games[frozenset((game.player1, game.player2))]
     elif result == 'already':
         update.message.reply_text("Вы уже стреляли сюда!")
