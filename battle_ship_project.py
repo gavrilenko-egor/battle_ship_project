@@ -451,5 +451,3 @@ def run_bot():
 
 bot_thread = threading.Thread(target=run_bot, daemon=True)
 bot_thread.start()
-
-print("Бот запущен! Для остановки нажмите Ctrl+C или перезапустите сессию Colab")
