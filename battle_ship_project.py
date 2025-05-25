@@ -1,3 +1,4 @@
+!pip install python-telegram-bot==13.7
 import random
 import threading
 from getpass import getpass
@@ -11,6 +12,8 @@ from telegram.ext import (
     CallbackContext,
 )
 
+ponoi = "CgACAgIAAxkBAAIDJWgvlTlXqNV5dnZ2Fk1WlclYhbGoAAIzPAACbh6JSXVTyconyk9GNgQ"
+
 
 class Game:
     """Создает игру морской бой для двух игроков.
@@ -23,6 +26,7 @@ class Game:
         timeout_timer (threading.Timer): Таймер бездействия.
         current_turn (int): ID игрока, чей сейчас ход.
     """
+
     def __init__(self, player1, player2):
         """Создание новой партии между двумя игроками и генерация игровых полей.
 
@@ -37,7 +41,7 @@ class Game:
         self.current_turn = random.choice([player1, player2])
         self.timeout_timer = None
         self.reset_timeout_timer()
-    
+
     def reset_timeout_timer(self):
         """Сбрасывает и запускает новый таймер бездействия (3 минуты).
         Если игрок не сделает ход за это время — он проигрывает.
@@ -56,6 +60,8 @@ class Game:
         context = self.context  # Сохраняем контекст в момент старта игры
 
         context.bot.send_message(loser, "Вы не сделали ход в течение 3 минут. Вы проиграли, чем вы там заняты?!")
+        context.bot.send_animation(loser, animation=ponoi)
+
         context.bot.send_message(winner, "🎉 Ваш соперник не сделал ход вовремя. Вы победили!")
 
         games.pop(frozenset({self.player1, self.player2}), None)
@@ -299,6 +305,7 @@ def stop(update: Update, context: CallbackContext):
             opponent_id = game.player1 if user_id == game.player2 else game.player2
 
             update.message.reply_text("Вы остановили игру.")
+            context.bot.send_animation(user_id, animation=ponoi)
             context.bot.send_message(opponent_id, "Противник завершил игру досрочно командой /stop.")
             return
 
@@ -375,12 +382,12 @@ def preobr_coord(coord_str):
 def handle_message(update: Update, context: CallbackContext):
     """Обрабатывает текстовые сообщения игроков.
 
-   Проверяет ход, обрабатывает координаты и обновляет состояние игры.
+    Проверяет ход, обрабатывает координаты и обновляет состояние игры.
 
-   Аргументы:
+    Аргументы:
        update (Update): Объект(сообщение) обновления Telegram-бота.
        context (CallbackContext): контекст Telegram-бота с игроком.
-   """
+    """
     user_id = update.message.from_user.id
     text = update.message.text
 
@@ -414,6 +421,7 @@ def handle_message(update: Update, context: CallbackContext):
         if game.check_win(user_id):
             context.bot.send_message(user_id, "🎉 Вы победили!")
             context.bot.send_message(protivnik, "😢 Вы проиграли...")
+            context.bot.send_animation(protivnik, animation=ponoi)
             del games[frozenset((game.player1, game.player2))]
     elif result == 'miss':
         update.message.reply_text("❌ Промах! Ход переходит сопернику.")
@@ -423,7 +431,7 @@ def handle_message(update: Update, context: CallbackContext):
         context.bot.send_message(user_id, "🎉 Вы победили!")
         context.bot.send_message(protivnik, "😢 Вы проиграли...")
         if game.timeout_timer:
-                    game.timeout_timer.cancel()
+            game.timeout_timer.cancel()
         del games[frozenset((game.player1, game.player2))]
     elif result == 'already':
         update.message.reply_text("Вы уже стреляли сюда!")
@@ -451,3 +459,5 @@ def run_bot():
 
 bot_thread = threading.Thread(target=run_bot, daemon=True)
 bot_thread.start()
+
+print("Бот запущен! Для остановки нажмите Ctrl+C или перезапустите сессию Colab")
