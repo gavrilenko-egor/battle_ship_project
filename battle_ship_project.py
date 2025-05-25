@@ -107,8 +107,6 @@ class Game:
             if x + size > 10:
                 return False
             for i in range(x, x + size):
-                if board[y][i] != 0:
-                    return False
                 for dy in [-1, 0, 1]:
                     for dx in [-1, 0, 1]:
                         ny = y + dy
@@ -119,8 +117,6 @@ class Game:
             if y + size > 10:
                 return False
             for j in range(y, y + size):
-                if board[j][x] != 0:
-                    return False
                 for dx in [-1, 0, 1]:
                     for dy in [-1, 0, 1]:
                         nx = x + dx
@@ -244,8 +240,8 @@ class Game:
         return all(1 not in row for row in target_board)
 
 
-waiting = []
-games = {}
+waiting = [] #список игроков в очереди.
+games = {} #словарь, где ключ — id игроков типа frozenset, значение — объект класса Game, т.е. текущая игра.
 
 
 def start(update: Update, context: CallbackContext):
@@ -297,17 +293,18 @@ def stop(update: Update, context: CallbackContext):
     """
     user_id = update.message.from_user.id
 
-    for key in list(games.keys()):
-        if user_id in key:
-            game = games.pop(key)
-            if game.timeout_timer:
-                game.timeout_timer.cancel()
-            opponent_id = game.player1 if user_id == game.player2 else game.player2
+    key = list(games.keys())[0]
 
-            update.message.reply_text("Вы остановили игру.")
-            context.bot.send_animation(user_id, animation=ponoi)
-            context.bot.send_message(opponent_id, "Противник завершил игру досрочно командой /stop.")
-            return
+    if user_id in key:
+        game = games.pop(key)
+        if game.timeout_timer:
+            game.timeout_timer.cancel()
+        protivnik_id = game.player1 if user_id == game.player2 else game.player2
+
+        update.message.reply_text("Вы остановили игру.")
+        context.bot.send_animation(user_id, animation=ponoi)
+        context.bot.send_message(protivnik_id, "Противник завершил игру досрочно командой /stop.")
+        return
 
     update.message.reply_text("Вы не участвуете в текущей игре.")
 
@@ -324,15 +321,15 @@ def send_boards(context, game):
         own_board = game.board1 if is_own else game.board2
         protivnik_board = game.board2 if is_own else game.board1
 
-        own_display = draw_board(own_board, is_own=True)
-        protivnik_display = draw_board(protivnik_board, is_own=False)
+        own_display = draw_board(own_board, True)
+        protivnik_display = draw_board(protivnik_board, False)
         context.bot.send_message(
             player,
             f"Ваше поле:\n{own_display}\n\nПоле соперника:\n{protivnik_display}"
         )
 
 
-def draw_board(board, is_own=True):
+def draw_board(board, is_own):
     """Преобразует игровое поле в текстовый вид с эмодзи.
 
     Аргументы:
@@ -374,9 +371,9 @@ def preobr_coord(coord_str):
         y = number - 1
         if 0 <= x < 10 and 0 <= y < 10:
             return x, y
-        return None
+        return
     except (IndexError, ValueError):
-        return None
+        return
 
 
 def handle_message(update: Update, context: CallbackContext):
@@ -392,10 +389,9 @@ def handle_message(update: Update, context: CallbackContext):
     text = update.message.text
 
     game = None
-    for key in list(games.keys()):
-        if user_id in key:
-            game = games[key]
-            break
+    key = list(games.keys())[0]
+    if user_id in key:
+        game = games[key]
 
     if not game:
         update.message.reply_text("Сначала начните игру с помощью /play")
@@ -418,11 +414,6 @@ def handle_message(update: Update, context: CallbackContext):
         update.message.reply_text("✅ ТУУУУУДААААА! Вы продолжайте стрелять.")
         context.bot.send_message(protivnik, "😢 По вам попали")
         send_boards(context, game)
-        if game.check_win(user_id):
-            context.bot.send_message(user_id, "🎉 Вы победили!")
-            context.bot.send_message(protivnik, "😢 Вы проиграли...")
-            context.bot.send_animation(protivnik, animation=ponoi)
-            del games[frozenset((game.player1, game.player2))]
     elif result == 'miss':
         update.message.reply_text("❌ Промах! Ход переходит сопернику.")
         context.bot.send_message(protivnik, "😏 Фух, пронесло")
@@ -430,6 +421,7 @@ def handle_message(update: Update, context: CallbackContext):
     elif result == 'win':
         context.bot.send_message(user_id, "🎉 Вы победили!")
         context.bot.send_message(protivnik, "😢 Вы проиграли...")
+        context.bot.send_animation(protivnik, animation=ponoi)
         if game.timeout_timer:
             game.timeout_timer.cancel()
         del games[frozenset((game.player1, game.player2))]
@@ -460,4 +452,4 @@ def run_bot():
 bot_thread = threading.Thread(target=run_bot, daemon=True)
 bot_thread.start()
 
-print("Бот запущен! Для остановки нажмите Ctrl+C или перезапустите сессию Colab")
+print("Бот запущен!")
